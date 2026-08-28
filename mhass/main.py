@@ -137,7 +137,22 @@ def prepare_external_counts(counts_input, amplicon_fasta, output_counts, output_
 
     if not seen_asvs:
         raise ValueError("Counts file contains no ASV rows")
+    # Check for ASVs that exist in the FASTA but were not found in the count matrix.
+    missing_asvs = fasta_ids - seen_asvs
 
+    if missing_asvs:
+        missing_sorted = sorted(missing_asvs)
+        preview = ", ".join(missing_sorted[:3])
+
+        if len(missing_sorted) > 3:
+            preview += f", ... and {len(missing_sorted) - 3} more"
+
+        raise ValueError(
+            f"Counts file is missing {len(missing_asvs)} FASTA ASV(s): "
+            f"{preview}. Every FASTA ASV must be represented explicitly "
+            "in the count matrix; use a count of 0 when an ASV is "
+            "intentionally absent from a sample."
+        )
     # ------------------------------------------------------------
     # Preserve the user's count matrix exactly.
     # ------------------------------------------------------------
