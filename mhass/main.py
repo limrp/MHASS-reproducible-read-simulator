@@ -300,6 +300,7 @@ def run_simulation(args):
         barcode_file,
         barcode_mapping,
         np_params,  # Pass the np_params dict instead of just the file
+        master_seed=args.seed,
     )
 
     # Step 3: Simulate and process reads
@@ -322,11 +323,16 @@ def run_simulation(args):
         args.threads,
         args.subread_accuracy,
         args.difference_ratio,
+        master_seed=args.seed,
     )
 
     # Step 4: Combine and relabel CCS reads
     print("\n==> STEP 4: Combining and relabeling CCS reads <==\n")
-    combine_fastqs(sim_reads_dir, combined_reads)
+    combine_fastqs(
+        sim_reads_dir,
+        combined_reads,
+        master_seed=args.seed,
+    )
 
     print("\n==> STEP 5: Cleaning up intermediate files <==\n")
     # Move sequence mapping file up one directory
@@ -472,8 +478,21 @@ def main():
         default=multiprocessing.cpu_count(),
         help="Number of threads to use for parallel processing",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "Master seed for deterministic np sampling, PBSIM simulation, "
+            "and read orientation. For fully reproducible benchmarking, "
+            "use with --counts-file."
+        ),
+    )
     args = parser.parse_args()
 
+    # Reject negative master seeds
+    if args.seed is not None and args.seed < 0:
+        parser.error("--seed must be a non-negative integer")
     if args.counts_file is None and args.amplicon_genome_labels is None:
         parser.error(
             "--amplicon-genome-labels is required unless --counts-file is supplied"
