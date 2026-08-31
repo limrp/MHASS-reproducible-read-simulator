@@ -5,6 +5,7 @@ import random
 import numpy as np
 from collections import defaultdict
 from pathlib import Path
+from mhass.seed_utils import derive_seed
 
 def reverse_complement(seq):
     """Return the reverse complement of a DNA sequence."""
@@ -25,24 +26,32 @@ def load_np_distribution(np_file):
                 weighted.extend([np_val] * count)
     return weighted
 
-def sample_np_lognormal(mu, sigma, np_min, np_max):
+def sample_np_lognormal(mu, sigma, np_min, np_max, rng=None):
     """Sample np value from lognormal distribution with bounds."""
     while True:
-        # Sample from lognormal distribution
-        value = np.random.lognormal(mu, sigma)
+        if rng is None:
+            value = np.random.lognormal(mu, sigma)
+        else:
+            value = rng.lognormal(mu, sigma)
         # Round to integer and apply bounds
         np_val = int(round(value))
         if np_min <= np_val <= np_max:
             return np_val
 
-def create_np_sampler(np_params):
+def create_np_sampler(np_params, master_seed=None):
     """Create appropriate np sampler based on distribution type."""
     dist_type = np_params['distribution_type']
     
     if dist_type == 'empirical':
         # Load empirical distribution
         np_values = load_np_distribution(np_params['empirical_file'])
-        return lambda: random.choice(np_values)
+        if master_seed is None:
+            return lambda: random.choice(np_values)
+
+        empirical_seed = derive_seed(master_seed, "np-empirical")
+        empirical_rng = random.Random(empirical_seed)
+
+        return lambda: empirical_rng.choice(np_values)
     
     elif dist_type == 'lognormal':
         # Create lognormal sampler
@@ -52,12 +61,38 @@ def create_np_sampler(np_params):
         np_max = np_params['np_max']
         
         print(f"Using lognormal distribution: mu={mean_np}, sigma={sd_np}, range=[{np_min}, {np_max}]")
-        return lambda: sample_np_lognormal(mean_np, sd_np, np_min, np_max)
+
+        if master_seed is None:
+            return lambda: sample_np_lognormal(
+                mean_np,
+                sd_np,
+                np_min,
+                np_max,
+            )
+
+        lognormal_seed = derive_seed(master_seed, "np-lognormal")
+        lognormal_rng = np.random.default_rng(lognormal_seed)
+
+        return lambda: sample_np_lognormal(
+            mean_np,
+            sd_np,
+            np_min,
+            np_max,
+            rng=lognormal_rng,
+        )
     
     else:
         raise ValueError(f"Unknown distribution type: {dist_type}")
 
-def create_per_sequence_templates(fasta_path, counts_path, output_dir, barcode_file, barcode_mapping_file, np_params):
+def create_per_sequence_templates(
+    fasta_path,
+    counts_path,
+    output_dir,
+    barcode_file,
+    barcode_mapping_file,
+    np_params,
+    master_seed=None,
+):
     """Create per-sequence template files with barcodes and sampled np values for PacBio simulation."""
     # Load FASTA
     seqs = {}
@@ -84,7 +119,10 @@ def create_per_sequence_templates(fasta_path, counts_path, output_dir, barcode_f
     count_data = {row[0]: list(map(int, row[1:])) for row in lines[1:]}
 
     # Create np value sampler
-    sample_np = create_np_sampler(np_params)
+    sample_np = create_np_sampler(
+        np_params,
+        master_seed=master_seed,
+    )
 
     # Load barcodes
     barcodes = []
