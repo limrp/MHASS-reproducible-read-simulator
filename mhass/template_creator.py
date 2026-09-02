@@ -124,14 +124,45 @@ def create_per_sequence_templates(
         master_seed=master_seed,
     )
 
-    # Load barcodes
+    # Load barcodes.
+    # Support both headered and headerless barcode files.
     barcodes = []
+    first_valid_row = True
+
     with open(barcode_file) as f:
-        next(f)  # skip header
         for line in f:
+            if not line.strip():
+                continue
+
             parts = line.strip().split('\t')
-            if len(parts) >= 3:
-                barcodes.append({'id': parts[0], 'forward': parts[1], 'reverse': parts[2]})
+
+            if len(parts) < 3:
+                continue
+
+            if first_valid_row:
+                normalized = [
+                    field.strip().lower().replace("_", "").replace("-", "")
+                    for field in parts[:3]
+                ]
+
+                is_header = (
+                    normalized[0] in {"id", "barcodeid"}
+                    and normalized[1] in {"forward", "forwardbarcode"}
+                    and normalized[2] in {"reverse", "reversebarcode"}
+                )
+
+                first_valid_row = False
+
+                if is_header:
+                    continue
+
+            barcodes.append(
+                {
+                    'id': parts[0],
+                    'forward': parts[1],
+                    'reverse': parts[2],
+                }
+            )
     if len(barcodes) < len(sample_names):
         raise ValueError(f"Only {len(barcodes)} barcodes for {len(sample_names)} samples")
 
