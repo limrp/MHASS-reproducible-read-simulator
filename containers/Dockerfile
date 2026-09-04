@@ -1,4 +1,5 @@
-FROM mambaorg/micromamba:2.9.0
+# Pinned linux/amd64 manifest for mambaorg/micromamba:2.9.0
+FROM mambaorg/micromamba:2.9.0@sha256:5681ae3caa12844c41d31e1d70f636fbaba31b01bdfd1b5b521742d7e490614d
 
 # ------------------------------------------------------------
 # Recreate the exact known-good Conda portion of the environment
