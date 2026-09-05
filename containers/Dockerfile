@@ -70,8 +70,7 @@ RUN curl \
 # ------------------------------------------------------------
 
 RUN Rscript -e 'remotes::install_gitlab("sysbiobig/metaSPARSim", ref="37b5931ab1ed6836ded1b605ab23e41824d0f91e", upgrade="never")' \
-    && Rscript -e 'stopifnot(as.character(packageVersion("metaSPARSim")) == "1.1.2")'
-
+    && Rscript -e 'expected <- c(xfun="0.60", lattice="0.23.1", yaml="2.3.12", highr="0.12", evaluate="1.0.5", Rcpp="1.1.2", locfit="1.5.9.12", limma="3.54.2", knitr="1.51", edgeR="3.40.2"); actual <- vapply(names(expected), function(p) as.character(packageVersion(p)), character(1)); stopifnot(identical(actual, expected)); stopifnot(as.character(packageVersion("metaSPARSim")) == "1.1.2"); d <- packageDescription("metaSPARSim"); stopifnot(d$RemoteSha == "37b5931ab1ed6836ded1b605ab23e41824d0f91e")'
 
 # ------------------------------------------------------------
 # Install this exact MHASS source tree
@@ -83,8 +82,10 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER pyproject.toml README.md ./
 COPY --chown=$MAMBA_USER:$MAMBA_USER mhass ./mhass
 COPY --chown=$MAMBA_USER:$MAMBA_USER tests ./tests
 
-RUN python -m pip install --no-deps .
-
+RUN python -m pip install \
+        --no-deps \
+        --no-build-isolation \
+        .
 
 # ------------------------------------------------------------
 # PBSIM resource location
