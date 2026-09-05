@@ -49,6 +49,21 @@ RUN python -m pip install \
         --no-deps \
         -r /tmp/requirements-pip.txt
 
+# ------------------------------------------------------------
+# Install the exact BiocManager version required by get_counts.R
+# ------------------------------------------------------------
+
+RUN curl \
+        --fail \
+        --location \
+        --show-error \
+        https://cran.r-project.org/src/contrib/BiocManager_1.30.27.tar.gz \
+        --output /tmp/BiocManager_1.30.27.tar.gz \
+    && echo "acbfdcf09602c8279085556ca54531c2ada0ac3c1775d54ce2c3b9a3dc03fbb5  /tmp/BiocManager_1.30.27.tar.gz" \
+        | sha256sum --check \
+    && R CMD INSTALL /tmp/BiocManager_1.30.27.tar.gz \
+    && Rscript -e 'stopifnot(as.character(packageVersion("BiocManager")) == "1.30.27")' \
+    && rm /tmp/BiocManager_1.30.27.tar.gz
 
 # ------------------------------------------------------------
 # Install the audited metaSPARSim revision
