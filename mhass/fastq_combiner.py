@@ -4,6 +4,8 @@ import random
 from pathlib import Path
 from tqdm import tqdm
 
+from mhass.seed_utils import derive_seed
+
 def reverse_complement(seq):
     """Generate reverse complement of a DNA sequence."""
     complement = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C', 
@@ -13,16 +15,28 @@ def reverse_complement(seq):
     # Handle any non-standard characters by keeping them as-is
     return ''.join(complement.get(base, base) for base in reversed(seq))
 
-def combine_fastqs(input_dir, output_fastq):
+def combine_fastqs(
+    input_dir,
+    output_fastq,
+    master_seed=None,
+):
     """Combine FASTQ files and add template prefix to headers."""
     input_dir = Path(input_dir)
     total_records = 0
     total_files = 0
     total_revcomp = 0
-    
-    # Set random seed for reproducibility (optional - remove for true randomness)
-    # random.seed(42)
-    
+
+    orientation_rng = None
+
+    if master_seed is not None:
+        orientation_seed = derive_seed(
+            master_seed,
+            "orientation",
+        )
+        orientation_rng = random.Random(
+            orientation_seed
+        )
+
     # First, count total files to process for progress display
     subdirs = [d for d in input_dir.iterdir() if d.is_dir()]
     total_subdirs = len(subdirs)
@@ -50,13 +64,20 @@ def combine_fastqs(input_dir, output_fastq):
                     seq = f.readline().strip()
                     plus = f.readline().strip()
                     qual = f.readline().strip()
-                    
-                    # Randomly decide whether to reverse complement (50% chance)
-                    if random.random() < 0.5:
+
+                    # Making the choice of reversing the read explicit
+                    if orientation_rng is None:
+                        # original MHASS behavior
+                        reverse_this_read = random.random() < 0.5
+                    else:
+                        # deterministic local RNG
+                        reverse_this_read = orientation_rng.random() < 0.5
+
+                    if reverse_this_read:
                         seq = reverse_complement(seq)
                         qual = qual[::-1]  # Reverse quality string
                         total_revcomp += 1
-                    
+
                     # Rewrite header to prefix with template name
                     if header.startswith('@'):
                         new_header = f"@{template_name}/{header[1:]}"

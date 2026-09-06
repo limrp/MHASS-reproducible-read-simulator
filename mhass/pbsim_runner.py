@@ -8,12 +8,24 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 import shutil
 
+from mhass.seed_utils import derive_pbsim_seed
+
+
 def extract_passes(template_file):
     """Extract the number of passes from the template filename."""
     match = re.search(r"_np(\d+)", template_file.name)
     return int(match.group(1)) if match else None
 
-def run_chunk(chunk_id, fasta_chunk, output_base, pbsim_path, qshmm_path, subread_accuracy, difference_ratio):
+def run_chunk(
+    chunk_id,
+    fasta_chunk,
+    output_base,
+    pbsim_path,
+    qshmm_path,
+    subread_accuracy,
+    difference_ratio,
+    master_seed=None,
+):
     """Run PBSIM on a chunk of template files."""
     results = []
     for template_file in fasta_chunk:
@@ -23,6 +35,15 @@ def run_chunk(chunk_id, fasta_chunk, output_base, pbsim_path, qshmm_path, subrea
             continue
             
         template = template_file.stem
+
+        pbsim_seed = None
+
+        if master_seed is not None:
+            pbsim_seed = derive_pbsim_seed(
+                master_seed,
+                template_file.name,
+            )
+
         out_dir = output_base / template
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -38,9 +59,23 @@ def run_chunk(chunk_id, fasta_chunk, output_base, pbsim_path, qshmm_path, subrea
             "--accuracy-mean", str(subread_accuracy),
             "--pass-num", str(np_value),
             "--difference-ratio", str(difference_ratio),
-            "--prefix", str(out_dir / "sim")
         ]
         
+        if pbsim_seed is not None:
+            pbsim_cmd.extend(
+                [
+                    "--seed",
+                    str(pbsim_seed),
+                ]
+            )
+
+        pbsim_cmd.extend(
+            [
+                "--prefix",
+                str(out_dir / "sim"),
+            ]
+        )
+
         try:
             # Capture the output instead of discarding it
             result = subprocess.run(pbsim_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, text=True)
@@ -82,7 +117,16 @@ def chunked(lst, n_chunks):
     # Remove empty chunks
     return [chunk for chunk in chunks if chunk]
 
-def run_pbsim(template_dir, output_base, pbsim_path, qshmm_path, threads, subread_accuracy, difference_ratio):
+def run_pbsim(
+    template_dir,
+    output_base,
+    pbsim_path,
+    qshmm_path,
+    threads,
+    subread_accuracy,
+    difference_ratio,
+    master_seed=None,
+):
     """Run PBSIM on template files in parallel."""
     template_dir = Path(template_dir)
     output_base = Path(output_base)
@@ -126,7 +170,17 @@ def run_pbsim(template_dir, output_base, pbsim_path, qshmm_path, threads, subrea
     # Process chunks in parallel
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = {
-        executor.submit(run_chunk, i, chunk, output_base, pbsim_path, qshmm_path, subread_accuracy, difference_ratio): i
+            executor.submit(
+                run_chunk,
+                i,
+                chunk,
+                output_base,
+                pbsim_path,
+                qshmm_path,
+                subread_accuracy,
+                difference_ratio,
+                master_seed,
+            ): i
             for i, chunk in enumerate(chunks)
         }
         

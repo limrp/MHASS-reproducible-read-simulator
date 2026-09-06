@@ -24,6 +24,11 @@ dependencies = [
     "numpy>=1.18.0",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=6.2",
+]
+
 [project.scripts]
 mhass = "mhass.main:main"
 

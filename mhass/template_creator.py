@@ -5,6 +5,7 @@ import random
 import numpy as np
 from collections import defaultdict
 from pathlib import Path
+from mhass.seed_utils import derive_seed
 
 def reverse_complement(seq):
     """Return the reverse complement of a DNA sequence."""
@@ -25,24 +26,32 @@ def load_np_distribution(np_file):
                 weighted.extend([np_val] * count)
     return weighted
 
-def sample_np_lognormal(mu, sigma, np_min, np_max):
+def sample_np_lognormal(mu, sigma, np_min, np_max, rng=None):
     """Sample np value from lognormal distribution with bounds."""
     while True:
-        # Sample from lognormal distribution
-        value = np.random.lognormal(mu, sigma)
+        if rng is None:
+            value = np.random.lognormal(mu, sigma)
+        else:
+            value = rng.lognormal(mu, sigma)
         # Round to integer and apply bounds
         np_val = int(round(value))
         if np_min <= np_val <= np_max:
             return np_val
 
-def create_np_sampler(np_params):
+def create_np_sampler(np_params, master_seed=None):
     """Create appropriate np sampler based on distribution type."""
     dist_type = np_params['distribution_type']
     
     if dist_type == 'empirical':
         # Load empirical distribution
         np_values = load_np_distribution(np_params['empirical_file'])
-        return lambda: random.choice(np_values)
+        if master_seed is None:
+            return lambda: random.choice(np_values)
+
+        empirical_seed = derive_seed(master_seed, "np-empirical")
+        empirical_rng = random.Random(empirical_seed)
+
+        return lambda: empirical_rng.choice(np_values)
     
     elif dist_type == 'lognormal':
         # Create lognormal sampler
@@ -52,12 +61,38 @@ def create_np_sampler(np_params):
         np_max = np_params['np_max']
         
         print(f"Using lognormal distribution: mu={mean_np}, sigma={sd_np}, range=[{np_min}, {np_max}]")
-        return lambda: sample_np_lognormal(mean_np, sd_np, np_min, np_max)
+
+        if master_seed is None:
+            return lambda: sample_np_lognormal(
+                mean_np,
+                sd_np,
+                np_min,
+                np_max,
+            )
+
+        lognormal_seed = derive_seed(master_seed, "np-lognormal")
+        lognormal_rng = np.random.default_rng(lognormal_seed)
+
+        return lambda: sample_np_lognormal(
+            mean_np,
+            sd_np,
+            np_min,
+            np_max,
+            rng=lognormal_rng,
+        )
     
     else:
         raise ValueError(f"Unknown distribution type: {dist_type}")
 
-def create_per_sequence_templates(fasta_path, counts_path, output_dir, barcode_file, barcode_mapping_file, np_params):
+def create_per_sequence_templates(
+    fasta_path,
+    counts_path,
+    output_dir,
+    barcode_file,
+    barcode_mapping_file,
+    np_params,
+    master_seed=None,
+):
     """Create per-sequence template files with barcodes and sampled np values for PacBio simulation."""
     # Load FASTA
     seqs = {}
@@ -84,16 +119,50 @@ def create_per_sequence_templates(fasta_path, counts_path, output_dir, barcode_f
     count_data = {row[0]: list(map(int, row[1:])) for row in lines[1:]}
 
     # Create np value sampler
-    sample_np = create_np_sampler(np_params)
+    sample_np = create_np_sampler(
+        np_params,
+        master_seed=master_seed,
+    )
 
-    # Load barcodes
+    # Load barcodes.
+    # Support both headered and headerless barcode files.
     barcodes = []
+    first_valid_row = True
+
     with open(barcode_file) as f:
-        next(f)  # skip header
         for line in f:
+            if not line.strip():
+                continue
+
             parts = line.strip().split('\t')
-            if len(parts) >= 3:
-                barcodes.append({'id': parts[0], 'forward': parts[1], 'reverse': parts[2]})
+
+            if len(parts) < 3:
+                continue
+
+            if first_valid_row:
+                normalized = [
+                    field.strip().lower().replace("_", "").replace("-", "")
+                    for field in parts[:3]
+                ]
+
+                is_header = (
+                    normalized[0] in {"id", "barcodeid"}
+                    and normalized[1] in {"forward", "forwardbarcode"}
+                    and normalized[2] in {"reverse", "reversebarcode"}
+                )
+
+                first_valid_row = False
+
+                if is_header:
+                    continue
+
+            barcodes.append(
+                {
+                    'id': parts[0],
+                    'forward': parts[1],
+                    'reverse': parts[2],
+                }
+            )
     if len(barcodes) < len(sample_names):
         raise ValueError(f"Only {len(barcodes)} barcodes for {len(sample_names)} samples")
 
